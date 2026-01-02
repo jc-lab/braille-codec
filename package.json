@@ -20,6 +20,14 @@
   ],
   "author": "Joseph Lee <joseph@jc-lab.net>",
   "license": "Apache-2.0",
+  "homepage": "https://github.com/jc-lab/braille-codec#readme",
+  "bugs": {
+    "url": "https://github.com/jc-lab/braille-codec/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jc-lab/braille-codec.git"
+  },
   "devDependencies": {
     "@rollup/plugin-typescript": "^11.1.6",
     "@types/node": "^20.14.10",
