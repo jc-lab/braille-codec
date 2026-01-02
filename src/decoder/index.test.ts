@@ -23,6 +23,11 @@ describe('Decoder', () => {
       expect(decoder.asciiBrailleToUnicode(' ')).toBe('⠀')
       expect(decoder.asciiBrailleToUnicode('=')).toBe('⠿')
     });
+
+
+    it('should convert complex korean strings 1', () => {
+      expect(decoder.asciiBrailleToUnicode(',ui{a@{5ra.{7e}8\'#bjbd c* @mr,x,0')).toBe('⠠⠥⠊⠪⠁⠈⠪⠢⠗⠁⠨⠪⠶⠑⠻⠦⠄⠼⠃⠚⠃⠙⠀⠉⠡⠀⠈⠍⠗⠠⠭⠠⠴');
+    });
   });
 
   describe('translateToText', () => {
@@ -53,8 +58,12 @@ describe('Decoder', () => {
     });
 
     it('should translate Korean sample 1', () => {
-      expect(decoder.translateToText('⠘⠂⠈⠪⠃⠘⠾⠚⠥⠐⠂')).toBe('발급번호:');
       expect(decoder.translateToText('⠦⠄⠼⠃⠚⠃⠙⠀⠉⠡⠀⠈⠍⠗⠠⠭⠠⠴')).toBe('(2024년 귀속)');
+      expect(decoder.translateToText('⠘⠂⠈⠪⠃⠘⠾⠚⠥⠐⠂')).toBe('발급번호:');
+    });
+
+    it('should translate Korean sample 2', () => {
+      expect(decoder.translateToText('⠠⠥⠊⠪⠁⠈⠪⠢⠗⠁⠨⠪⠶⠑⠻⠦⠄⠼⠃⠚⠃⠙⠀⠉⠡⠀⠈⠍⠗⠠⠭⠠⠴')).toBe('소득금액증명(2024년 귀속)');
     });
   });
 });
