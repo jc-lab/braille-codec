@@ -11,6 +11,9 @@
     "lint": "eslint . --ext .ts",
     "lint:fix": "eslint . --ext .ts --fix"
   },
+  "bin": {
+    "braille-decode": "bin/braille-decode"
+  },
   "keywords": [
     "braille",
     "BRL"

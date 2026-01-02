@@ -51,5 +51,10 @@ describe('Decoder', () => {
       // ⠼⠁⠀⠴⠁ (1 a)
       expect(decoder.translateToText('⠼⠁⠀⠴⠁')).toBe('1 a');
     });
+
+    it('should translate Korean sample 1', () => {
+      expect(decoder.translateToText('⠘⠂⠈⠪⠃⠘⠾⠚⠥⠐⠂')).toBe('발급번호:');
+      expect(decoder.translateToText('⠦⠄⠼⠃⠚⠃⠙⠀⠉⠡⠀⠈⠍⠗⠠⠭⠠⠴')).toBe('(2024년 귀속)');
+    });
   });
 });

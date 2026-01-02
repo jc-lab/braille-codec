@@ -1,0 +1,66 @@
+#!/usr/bin/env node
+"use strict";
+
+// Simple CLI wrapper for the Decoder exported from the built library
+// Usage: echo "⠠⠁⠃" | braille-decode
+
+const fs = require('fs');
+const path = require('path');
+
+function loadDecoder() {
+  // Prefer the compiled cjs build at dist/index.cjs
+  const distPath = path.join(__dirname, '..', 'dist', 'index.cjs');
+  if (fs.existsSync(distPath)) {
+    const lib = require(distPath);
+    if (lib && lib.Decoder) return lib.Decoder;
+  }
+
+  // Fallback: try requiring package entry (may work if built as module)
+  try {
+    const lib = require(path.join(__dirname, '..'));
+    if (lib && lib.Decoder) return lib.Decoder;
+  } catch (e) {
+    // ignore
+  }
+
+  console.error('Please run the project build first (e.g. npm run build) so the CLI can load the compiled library.');
+  process.exit(1);
+}
+
+const Decoder = loadDecoder();
+const decoder = new Decoder();
+
+let input = '';
+process.stdin.setEncoding('utf8');
+process.stdin.on('data', chunk => input += chunk);
+process.stdin.on('end', () => {
+  // Detect if input contains braille unicode characters (U+2800..U+28FF)
+  const hasBrailleUnicode = Array.from(input).some(ch => {
+    const code = ch.charCodeAt(0);
+    return code >= 0x2800 && code <= 0x28ff;
+  });
+
+  let output;
+  if (hasBrailleUnicode) {
+    output = decoder.translateToText(input);
+  } else {
+    // Treat as ASCII braille and convert first
+    const uni = decoder.asciiBrailleToUnicode(input);
+    output = decoder.translateToText(uni);
+  }
+
+  process.stdout.write(output);
+});
+
+// If stdin is a TTY (no pipe), read from argv instead
+if (process.stdin.isTTY) {
+  const arg = process.argv.slice(2).join(' ');
+  if (arg) {
+    input = arg;
+    process.stdin.emit('end');
+  } else {
+    // show simple help
+    console.log('Usage: echo "⠠⠁" | braille-decode');
+  }
+}
+
