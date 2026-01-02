@@ -65,5 +65,13 @@ describe('Decoder', () => {
     it('should translate Korean sample 2', () => {
       expect(decoder.translateToText('⠠⠥⠊⠪⠁⠈⠪⠢⠗⠁⠨⠪⠶⠑⠻⠦⠄⠼⠃⠚⠃⠙⠀⠉⠡⠀⠈⠍⠗⠠⠭⠠⠴')).toBe('소득금액증명(2024년 귀속)');
     });
+
+    it('should translate Korean sample 3', () => {
+      expect(decoder.translateToText('⠰⠎⠐⠕⠈⠕⠫⠒⠐⠂⠀⠨⠪⠁⠠⠕')).toBe('처리기간: 즉시');
+    });
+
+    it('should translate Korean sample 4', () => {
+      expect(decoder.translateToText('⠨⠍⠑⠟⠊⠪⠶⠐⠭⠘⠾⠚⠥⠐⠂⠀⠼⠊⠊⠊⠊⠊⠊⠤⠸⠢⠢⠢⠢⠢⠢⠢⠇')).toBe('주민등록번호: 999999‐∗∗∗∗∗∗∗');
+    });
   });
 });

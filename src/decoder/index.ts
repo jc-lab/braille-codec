@@ -266,6 +266,23 @@ export class Decoder {
           result += '.';
           i++;
           continue;
+        } else if (dot === 36) { // Hyphen in number mode
+          result += '‐'; // U+2010
+          i++;
+          continue;
+        } else if (dot === KOREAN_CONSONANT_INDICATOR) {
+          // ⠸ in number mode starts asterisk sequence
+          i++;
+          // All following ⠢ are asterisks
+          while (i < dots.length && dots[i] === 34) { // ⠢
+            result += '∗'; // U+2217
+            i++;
+          }
+          continue;
+        } else if (dot === 7) { // ⠇ in number mode (end marker?)
+          // Skip or handle as needed
+          i++;
+          continue;
         } else {
           isNumberMode = false;
           // Fall through
@@ -310,8 +327,21 @@ export class Decoder {
       }
 
       // Symbols (Check multi-dot symbols first)
+      // But check if this could be Korean choseong followed by jungseong or shortcut
       const sym = this.matchSymbol(dots, i);
       if (sym) {
+        // Check if this dot is also a choseong and followed by jungseong or shortcut
+        if (KOREAN_CHOSEONG[dot] && i + 1 < dots.length) {
+          const nextJung = this.matchJungseong(dots, i + 1);
+          const nextShortcut = this.matchShortcut(dots, i + 1);
+          if (nextJung || nextShortcut) {
+            // This is choseong, not symbol
+            flushPendingKorean();
+            pendingKoreanCho = KOREAN_CHOSEONG[dot];
+            i++;
+            continue;
+          }
+        }
         flushPendingKorean();
         result += sym.text;
         i += sym.len;
