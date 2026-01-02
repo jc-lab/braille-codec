@@ -27,8 +27,20 @@ export class Decoder {
   private shortcutMap: Map<string, { text: string; len: number; key: string }[]> = new Map();
   private symbolMap: Map<string, { text: string; len: number; key: string }[]> = new Map();
 
+  // Korean composition maps
+  private readonly CHOSEONG = 'ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ';
+  private readonly JUNGSEONG = 'ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ';
+  private readonly JONGSEONG = ['', 'ㄱ', 'ㄲ', 'ㄳ', 'ㄴ', 'ㄵ', 'ㄶ', 'ㄷ', 'ㄹ', 'ㄺ', 'ㄻ', 'ㄼ', 'ㄽ', 'ㄾ', 'ㄿ', 'ㅀ', 'ㅁ', 'ㅂ', 'ㅄ', 'ㅅ', 'ㅆ', 'ㅇ', 'ㅈ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'];
+  
+  private choMap: Record<string, number> = {};
+  private jungMap: Record<string, number> = {};
+  private jongMap: Record<string, number> = {};
+
   constructor() {
     this.initializeLookupTables();
+    this.CHOSEONG.split('').forEach((c, i) => this.choMap[c] = i);
+    this.JUNGSEONG.split('').forEach((c, i) => this.jungMap[c] = i);
+    this.JONGSEONG.forEach((c, i) => this.jongMap[c] = i);
   }
 
   /**
@@ -75,6 +87,7 @@ export class Decoder {
       entries.sort((a, b) => b.len - a.len);
     }
   }
+
   /**
    * Converts ASCII Braille (BRL) to Unicode Braille.
    * Example: asciiBrailleToUnicode('abcd') -> '⠁⠃⠉⠙'
@@ -99,7 +112,47 @@ export class Decoder {
   }
 
   /**
-   * Translates Unicode Braille to Text.
+   * Compose Korean syllable from jamo
+   */
+  private composeKoreanSyllable(cho: string, jung: string, jong: string = ''): string {
+    const choIdx = this.choMap[cho];
+    const jungIdx = this.jungMap[jung];
+    const jongIdx = this.jongMap[jong] || 0;
+    if (choIdx !== undefined && jungIdx !== undefined) {
+      return String.fromCharCode(0xAC00 + (choIdx * 21 + jungIdx) * 28 + jongIdx);
+    }
+    return cho + jung + jong;
+  }
+
+  /**
+   * Decompose Korean syllable to jamo
+   */
+  private decomposeSyllable(syllable: string): [string, string, string] | null {
+    const code = syllable.charCodeAt(0);
+    if (code >= 0xAC00 && code <= 0xD7A3) {
+      const offset = code - 0xAC00;
+      const choIdx = Math.floor(offset / (21 * 28));
+      const jungIdx = Math.floor((offset % (21 * 28)) / 28);
+      const jongIdx = offset % 28;
+      return [this.CHOSEONG[choIdx], this.JUNGSEONG[jungIdx], this.JONGSEONG[jongIdx]];
+    }
+    return null;
+  }
+
+  /**
+   * Add jongseong to existing syllable
+   */
+  private addJongseongToSyllable(syllable: string, jong: string): string {
+    const decomposed = this.decomposeSyllable(syllable);
+    if (decomposed) {
+      const [cho, jung, _] = decomposed;
+      return this.composeKoreanSyllable(cho, jung, jong);
+    }
+    return syllable + jong;
+  }
+
+  /**
+   * Translates Unicode Braille to Text (single line).
    * Supports Korean, English, Numbers, and Symbols.
    */
   public translateToTextOneLine(input: string): string {
@@ -116,11 +169,28 @@ export class Decoder {
     let i = 0;
     let isEnglishMode = false;
     let isNumberMode = false;
+    let pendingKoreanCho = ''; // Pending Korean choseong
+    let pendingKoreanJung = ''; // Pending Korean jungseong
+
+    const flushPendingKorean = () => {
+      if (pendingKoreanCho && pendingKoreanJung) {
+        result += this.composeKoreanSyllable(pendingKoreanCho, pendingKoreanJung);
+        pendingKoreanCho = '';
+        pendingKoreanJung = '';
+      } else if (pendingKoreanCho) {
+        result += pendingKoreanCho;
+        pendingKoreanCho = '';
+      } else if (pendingKoreanJung) {
+        result += this.composeKoreanSyllable('ㅇ', pendingKoreanJung);
+        pendingKoreanJung = '';
+      }
+    };
 
     while (i < dots.length) {
       const dot = dots[i];
 
       if (dot === -1) {
+        flushPendingKorean();
         result += input[i];
         isNumberMode = false;
         i++;
@@ -128,6 +198,7 @@ export class Decoder {
       }
 
       if (dot === 255) {
+        flushPendingKorean();
         result += '\n';
         isNumberMode = false;
         i++;
@@ -136,12 +207,14 @@ export class Decoder {
 
       // Indicators
       if (dot === NUMBER_INDICATOR) {
+        flushPendingKorean();
         isNumberMode = true;
         i++;
         continue;
       }
 
       if (dot === ENGLISH_INDICATOR) {
+        flushPendingKorean();
         isEnglishMode = true;
         i++;
         continue;
@@ -155,6 +228,7 @@ export class Decoder {
 
       if (dot === 0) {
         // Space
+        flushPendingKorean();
         // Check if we should skip space after number mode before Korean text (not English)
         if (isNumberMode && i + 1 < dots.length) {
           const nextDot = dots[i + 1];
@@ -238,6 +312,7 @@ export class Decoder {
       // Symbols (Check multi-dot symbols first)
       const sym = this.matchSymbol(dots, i);
       if (sym) {
+        flushPendingKorean();
         result += sym.text;
         i += sym.len;
         continue;
@@ -245,9 +320,22 @@ export class Decoder {
 
       // Korean Mode
       // 1. Shortcuts (Check multi-dot shortcuts first)
-      // But check if this could be a choseong followed by another shortcut or jungseong
       const shortcut = this.matchShortcut(dots, i);
       if (shortcut) {
+        // Check if there's a pending choseong (e.g., ㅅ + 옥 = 속, ㄴ + 영 = 녕)
+        if (pendingKoreanCho) {
+          // Decompose shortcut and combine with pending choseong
+          const decomposed = this.decomposeSyllable(shortcut.text);
+          if (decomposed && decomposed[0] === 'ㅇ') {
+            // Replace ㅇ with pending choseong
+            result += this.composeKoreanSyllable(pendingKoreanCho, decomposed[1], decomposed[2]);
+            pendingKoreanCho = '';
+            pendingKoreanJung = '';
+            i += shortcut.len;
+            continue;
+          }
+        }
+        
         // Check if this is a single-char shortcut that could be choseong
         const singleCharShortcuts = ['가', '나', '다', '마', '바', '사', '자', '카', '타', '파', '하'];
         if (shortcut.len === 1 && singleCharShortcuts.includes(shortcut.text)) {
@@ -257,71 +345,86 @@ export class Decoder {
             const nextJung = this.matchJungseong(dots, i + 1);
             
             // If followed by shortcut or jungseong, interpret as choseong
-            // If followed by jongseong, keep as shortcut (will be handled by composeKorean)
             if (nextShortcut || nextJung) {
               if (KOREAN_CHOSEONG[dot]) {
-                result += KOREAN_CHOSEONG[dot];
+                flushPendingKorean();
+                pendingKoreanCho = KOREAN_CHOSEONG[dot];
                 i++;
                 continue;
               }
             }
           }
         }
+        
+        // Shortcut is a complete syllable
+        // Check if next is jongseong
+        if (i + 1 < dots.length && KOREAN_JONGSEONG[dots[i + 1]]) {
+          // Add jongseong to shortcut
+          flushPendingKorean();
+          result += this.addJongseongToSyllable(shortcut.text, KOREAN_JONGSEONG[dots[i + 1]]);
+          i += shortcut.len + 1;
+          continue;
+        }
+        
+        flushPendingKorean();
         result += shortcut.text;
         i += shortcut.len;
         continue;
       }
 
-      // 2. Choseong - but check if followed by jungseong or shortcut
+      // 2. Choseong
       if (KOREAN_CHOSEONG[dot]) {
-        // Look ahead to see if there's a jungseong or shortcut
-        if (i + 1 < dots.length) {
-          const nextDot = dots[i + 1];
-          // Check if next is jungseong
-          const nextJung = this.matchJungseong(dots, i + 1);
-          if (nextJung) {
-            // This is choseong + jungseong, output choseong and continue
-            result += KOREAN_CHOSEONG[dot];
-            i++;
-            continue;
-          }
-          // Check if next is a shortcut that starts with ㅇ
-          const nextShortcut = this.matchShortcut(dots, i + 1);
-          if (nextShortcut) {
-            // Choseong + shortcut (e.g., ㅅ + 옥 = 속)
-            // Output choseong and let next iteration handle shortcut
-            result += KOREAN_CHOSEONG[dot];
-            i++;
-            continue;
-          }
-        }
-        result += KOREAN_CHOSEONG[dot];
+        flushPendingKorean();
+        pendingKoreanCho = KOREAN_CHOSEONG[dot];
         i++;
         continue;
       }
 
-      // 3. Jungseong (Check multi-dot jungseong first)
+      // 3. Jungseong
       const jung = this.matchJungseong(dots, i);
       if (jung) {
-        result += jung.text;
+        if (pendingKoreanCho && !pendingKoreanJung) {
+          // Choseong + Jungseong
+          pendingKoreanJung = jung.text;
+        } else if (pendingKoreanCho && pendingKoreanJung) {
+          // Already have cho + jung, flush and start new syllable
+          flushPendingKorean();
+          pendingKoreanCho = 'ㅇ';
+          pendingKoreanJung = jung.text;
+        } else {
+          // Jungseong alone (implicit ㅇ)
+          flushPendingKorean();
+          pendingKoreanCho = 'ㅇ';
+          pendingKoreanJung = jung.text;
+        }
         i += jung.len;
         continue;
       }
 
       // 4. Jongseong
       if (KOREAN_JONGSEONG[dot]) {
-        result += KOREAN_JONGSEONG[dot];
+        if (pendingKoreanCho && pendingKoreanJung) {
+          // Complete syllable with jongseong
+          result += this.composeKoreanSyllable(pendingKoreanCho, pendingKoreanJung, KOREAN_JONGSEONG[dot]);
+          pendingKoreanCho = '';
+          pendingKoreanJung = '';
+        } else {
+          // Jongseong without pending syllable
+          flushPendingKorean();
+          result += KOREAN_JONGSEONG[dot];
+        }
         i++;
         continue;
       }
 
       // 5. Korean Part/Consonant Indicators
       if (dot === KOREAN_PART_INDICATOR || dot === KOREAN_CONSONANT_INDICATOR) {
+        flushPendingKorean();
         i++;
         if (i < dots.length) {
           const nextDot = dots[i];
           // Try to find in choseong or jongseong maps
-          const char = KOREAN_CHOSEONG[nextDot] || KOREAN_JONGSEONG[nextDot] || KOREAN_JUNGSEONG[nextDot];
+          const char = KOREAN_CHOSEONG[nextDot] || KOREAN_JONGSEONG[nextDot];
           if (char) {
             result += char;
             i++;
@@ -332,10 +435,12 @@ export class Decoder {
       }
 
       // Unknown pattern
+      flushPendingKorean();
       i++;
     }
 
-    return this.composeKorean(result);
+    flushPendingKorean();
+    return result;
   }
 
   private matchJungseong(dots: number[], index: number): { text: string; len: number } | null {
@@ -388,193 +493,5 @@ export class Decoder {
       }
     }
     return null;
-  }
-
-  /**
-   * Composes individual Korean parts into syllables.
-   * This is a basic implementation.
-   */
-  private composeKorean(text: string): string {
-    const CHOSEONG = 'ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ';
-    const JUNGSEONG = 'ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ';
-    const JONGSEONG = ['', 'ㄱ', 'ㄲ', 'ㄳ', 'ㄴ', 'ㄵ', 'ㄶ', 'ㄷ', 'ㄹ', 'ㄺ', 'ㄻ', 'ㄼ', 'ㄽ', 'ㄾ', 'ㄿ', 'ㅀ', 'ㅁ', 'ㅂ', 'ㅄ', 'ㅅ', 'ㅆ', 'ㅇ', 'ㅈ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'];
-
-    const choMap: Record<string, number> = {};
-    CHOSEONG.split('').forEach((c, i) => choMap[c] = i);
-    const jungMap: Record<string, number> = {};
-    JUNGSEONG.split('').forEach((c, i) => jungMap[c] = i);
-    const jongMap: Record<string, number> = {};
-    JONGSEONG.forEach((c, i) => jongMap[c] = i);
-
-    // Shortcuts that are already complete syllables
-    const completeSyllables = new Set([
-      '가', '나', '다', '마', '바', '사', '자', '카', '타', '파', '하',
-      '억', '언', '얼', '연', '열', '영', '옥', '온', '옹', '운', '울', '은', '을', '인',
-      '성', '정', '청', '것'
-    ]);
-
-    // Decompose complete syllables (including shortcuts)
-    const decomposeSyllable = (syllable: string): [string, string, string] | null => {
-      const code = syllable.charCodeAt(0);
-      if (code >= 0xAC00 && code <= 0xD7A3) {
-        const offset = code - 0xAC00;
-        const choIdx = Math.floor(offset / (21 * 28));
-        const jungIdx = Math.floor((offset % (21 * 28)) / 28);
-        const jongIdx = offset % 28;
-        return [CHOSEONG[choIdx], JUNGSEONG[jungIdx], JONGSEONG[jongIdx]];
-      }
-      return null;
-    };
-
-    // Check if a character is a complete Korean syllable
-    const isKoreanSyllable = (char: string): boolean => {
-      const code = char.charCodeAt(0);
-      return code >= 0xAC00 && code <= 0xD7A3;
-    };
-
-    let result = '';
-    let i = 0;
-    while (i < text.length) {
-      const c = text[i];
-      
-      // Check if it's a choseong followed by a complete syllable or shortcut
-      if (choMap[c] !== undefined && i + 1 < text.length) {
-        const nextChar = text[i + 1];
-        
-        // Check if next is a complete Korean syllable (including shortcuts)
-        if (isKoreanSyllable(nextChar) || completeSyllables.has(nextChar)) {
-          const decomposed = decomposeSyllable(nextChar);
-          if (decomposed) {
-            const [nextCho, nextJung, nextJong] = decomposed;
-            // If the next syllable starts with ㅇ, we can replace it with current choseong
-            if (nextCho === 'ㅇ') {
-              const choIdx = choMap[c];
-              const jungIdx = jungMap[nextJung];
-              const jongIdx = jongMap[nextJong] || 0;
-              result += String.fromCharCode(0xAC00 + (choIdx * 21 + jungIdx) * 28 + jongIdx);
-              i += 2;
-              continue;
-            }
-          }
-        }
-      }
-      
-      // If it's already a complete syllable (shortcut), check if followed by jongseong
-      if (completeSyllables.has(c) || isKoreanSyllable(c)) {
-        // Check if next is jongseong
-        if (i + 1 < text.length && jongMap[text[i + 1]] !== undefined && text[i + 1] !== '') {
-          // Check if it's really jongseong
-          // Jongseong if: end of text, or followed by choseong/syllable (not jungseong)
-          const nextNext = i + 2 < text.length ? text[i + 2] : '';
-          const isNextJung = jungMap[nextNext] !== undefined;
-          const isNextCho = choMap[nextNext] !== undefined;
-          const isNextSyllable = isKoreanSyllable(nextNext) || completeSyllables.has(nextNext);
-          
-          // If followed by choseong or syllable, it's jongseong of current syllable
-          // If followed by jungseong, it's choseong of next syllable
-          if (i + 2 >= text.length || isNextCho || isNextSyllable) {
-            // Add jongseong to the syllable
-            const decomposed = decomposeSyllable(c);
-            if (decomposed) {
-              const [cho, jung, _] = decomposed;
-              const jong = text[i + 1];
-              const choIdx = choMap[cho];
-              const jungIdx = jungMap[jung];
-              const jongIdx = jongMap[jong] || 0;
-              result += String.fromCharCode(0xAC00 + (choIdx * 21 + jungIdx) * 28 + jongIdx);
-              i += 2;
-              continue;
-            }
-          }
-        }
-        result += c;
-        i++;
-        continue;
-      }
-
-      // Check if it's a jungseong (vowel) - needs implicit ㅇ choseong
-      if (jungMap[c] !== undefined) {
-        const jung = c;
-        let jong = '';
-        
-        // Look ahead for jongseong
-        if (i + 1 < text.length && jongMap[text[i + 1]] !== undefined && text[i + 1] !== '') {
-          // Check if next is really jongseong (not followed by jungseong)
-          if (i + 2 >= text.length || jungMap[text[i + 2]] === undefined) {
-            jong = text[i + 1];
-            i++;
-          }
-        }
-        
-        // Compose with implicit ㅇ
-        const choIdx = choMap['ㅇ'];
-        const jungIdx = jungMap[jung];
-        const jongIdx = jongMap[jong] || 0;
-        result += String.fromCharCode(0xAC00 + (choIdx * 21 + jungIdx) * 28 + jongIdx);
-        i++;
-        continue;
-      }
-      
-      // Check if it's a choseong
-      if (choMap[c] !== undefined) {
-        const cho = c;
-        let jung = '';
-        let jong = '';
-
-        // Look ahead for jungseong
-        if (i + 1 < text.length && jungMap[text[i + 1]] !== undefined) {
-          jung = text[i + 1];
-          i++;
-          
-          // Look ahead for jongseong
-          if (i + 1 < text.length && jongMap[text[i + 1]] !== undefined && text[i + 1] !== '') {
-            // Check if next is really jongseong
-            const nextNext = i + 2 < text.length ? text[i + 2] : '';
-            const isNextJung = jungMap[nextNext] !== undefined;
-            const isNextSyllable = isKoreanSyllable(nextNext) || completeSyllables.has(nextNext);
-            
-            // If followed by syllable that starts with ㅇ, the consonant is choseong of next syllable
-            if (isNextSyllable) {
-              const decomposed = decomposeSyllable(nextNext);
-              if (decomposed && decomposed[0] === 'ㅇ') {
-                // Don't add as jongseong, it's choseong of next syllable
-              } else {
-                // Add as jongseong
-                jong = text[i + 1];
-                i++;
-              }
-            } else if (i + 2 >= text.length || !isNextJung) {
-              // If NOT followed by jungseong, it's jongseong
-              jong = text[i + 1];
-              i++;
-            }
-          }
-        }
-
-        if (jung) {
-          const choIdx = choMap[cho];
-          const jungIdx = jungMap[jung];
-          const jongIdx = jongMap[jong] || 0;
-          result += String.fromCharCode(0xAC00 + (choIdx * 21 + jungIdx) * 28 + jongIdx);
-        } else {
-          // Choseong without jungseong, keep as is
-          result += c;
-        }
-        i++;
-        continue;
-      }
-
-      // Check if it's a jongseong alone (shouldn't happen normally, but handle it)
-      if (jongMap[c] !== undefined && c !== '') {
-        result += c;
-        i++;
-        continue;
-      }
-
-      // Not a Korean jamo, keep as is
-      result += c;
-      i++;
-    }
-    return result;
   }
 }
