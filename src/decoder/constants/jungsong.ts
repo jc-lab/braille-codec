@@ -1,0 +1,25 @@
+import { decodeUnicode } from './utils';
+
+export const KOREAN_JUNGSEONG: Record<string, string> = {
+  [`${decodeUnicode('⠣')}`]: 'ㅏ',
+  [`${decodeUnicode('⠜')}`]: 'ㅑ',
+  [`${decodeUnicode('⠎')}`]: 'ㅓ',
+  [`${decodeUnicode('⠱')}`]: 'ㅕ',
+  [`${decodeUnicode('⠥')}`]: 'ㅗ',
+  [`${decodeUnicode('⠬')}`]: 'ㅛ',
+  [`${decodeUnicode('⠍')}`]: 'ㅜ',
+  [`${decodeUnicode('⠩')}`]: 'ㅠ',
+  [`${decodeUnicode('⠪')}`]: 'ㅡ',
+  [`${decodeUnicode('⠕')}`]: 'ㅣ',
+  [`${decodeUnicode('⠗')}`]: 'ㅐ',
+  [`${decodeUnicode('⠝')}`]: 'ㅔ',
+  [`${decodeUnicode('⠽')}`]: 'ㅚ',
+  [`${decodeUnicode('⠧')}`]: 'ㅘ',
+  [`${decodeUnicode('⠏')}`]: 'ㅝ',
+  [`${decodeUnicode('⠺')}`]: 'ㅢ',
+  [`${decodeUnicode('⠌')}`]: 'ㅖ',
+  [`${decodeUnicode('⠍')},${decodeUnicode('⠗')}`]: 'ㅟ',
+  [`${decodeUnicode('⠜')},${decodeUnicode('⠗')}`]: 'ㅒ',
+  [`${decodeUnicode('⠧')},${decodeUnicode('⠗')}`]: 'ㅙ',
+  [`${decodeUnicode('⠏')},${decodeUnicode('⠗')}`]: 'ㅞ',
+};
